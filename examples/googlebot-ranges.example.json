@@ -1,0 +1,8 @@
+{
+  "creationTime": "2026-03-01T00:00:00.000000",
+  "comment": "Example only. These are documentation addresses (RFC 5737 / RFC 3849), not real crawler ranges. Download the current file published by the search engine instead.",
+  "prefixes": [
+    { "ipv4Prefix": "192.0.2.0/25" },
+    { "ipv6Prefix": "2001:db8:4840::/48" }
+  ]
+}

@@ -1,0 +1,60 @@
+# Example configuration for crawl-log-analyzer.
+# Use it with:  crawl-log-analyzer analyze access.log --config config.example.toml
+# Every table and key is optional.
+
+# --- Extra bot signatures ---------------------------------------------------
+# Checked before the built-in table, so they can also override a built-in bot.
+# "pattern" is a case-insensitive regular expression searched in the user agent.
+[[bots]]
+name = "ExampleShop Crawler"
+pattern = 'exampleshop-crawler/\d'
+family = "ExampleShop"
+category = "monitoring"          # search, ai, seo, social, monitoring or other
+
+[[bots]]
+name = "PartnerFeedBot"
+pattern = "PartnerFeedBot"
+category = "other"
+# Host name suffixes used by --verify-dns for this bot.
+dns_suffixes = [".crawl.partner.example"]
+
+# --- Crawl budget waste rules ------------------------------------------------
+[waste]
+# Add to the built-in parameter lists ...
+extra_tracking_params = ["promo_code", "campaign_id"]
+extra_facet_params = ["fabric", "fit"]
+# ... or replace a list completely with tracking_params / facet_params /
+# search_params (do not combine a list with its extra_ variant).
+
+# Parameters that never count as waste on their own.
+ignore_params = ["page", "lang"]
+
+# Set to false to stop reporting CSS, JS, images and fonts as waste.
+flag_static_assets = true
+
+# Custom rules are regular expressions matched against the full URL.
+[[waste.rules]]
+name = "calendar-trap"
+pattern = '^/events/\d{4}/\d{2}/'
+
+[[waste.rules]]
+name = "print-view"
+pattern = '/print/?$'
+
+# --- Analysis defaults (command-line options win) ----------------------------
+[analysis]
+top = 25
+directory_depth = 2
+anomaly_threshold = 3.5
+
+# --- Input -------------------------------------------------------------------
+[input]
+# A predefined format name ...
+# format = "combined"
+# ... or a custom Nginx log_format / Apache LogFormat string:
+log_format = '$remote_addr - $remote_user [$time_local] "$request" $status $body_bytes_sent "$http_referer" "$http_user_agent" $request_time'
+
+# For JSON logs with unusual key names (use with format = "json"):
+# [input.json_fields]
+# ip = "client.address"
+# request_time_ms = "took_ms"
