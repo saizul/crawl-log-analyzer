@@ -454,3 +454,14 @@ Bug reports, new bot signatures and format fixes are welcome. See
 ## License
 
 MIT. See [LICENSE](LICENSE). Copyright (c) 2026 Saizul Amin.
+
+## Docker image
+
+A multi-arch image (linux/amd64, linux/arm64) is published to GitHub Packages:
+
+```bash
+docker pull ghcr.io/saizul/crawl-log-analyzeratest
+docker run --rm -v "$PWD:/work" ghcr.io/saizul/crawl-log-analyzeratest --help
+```
+
+Mount the folder with your input files at `/work`; output files are written there too.
