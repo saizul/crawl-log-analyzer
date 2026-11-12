@@ -460,8 +460,8 @@ MIT. See [LICENSE](LICENSE). Copyright (c) 2026 Saizul Amin.
 A multi-arch image (linux/amd64, linux/arm64) is published to GitHub Packages:
 
 ```bash
-docker pull ghcr.io/saizul/crawl-log-analyzeratest
-docker run --rm -v "$PWD:/work" ghcr.io/saizul/crawl-log-analyzeratest --help
+docker pull ghcr.io/saizul/crawl-log-analyzer:latest
+docker run --rm -v "$PWD:/work" ghcr.io/saizul/crawl-log-analyzer:latest --help
 ```
 
 Mount the folder with your input files at `/work`; output files are written there too.
