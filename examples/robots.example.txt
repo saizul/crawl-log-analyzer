@@ -1,0 +1,19 @@
+# Example robots.txt for the synthetic site in sample-access.log.
+# Use it with:  crawl-log-analyzer analyze examples/sample-access.log --robots-txt examples/robots.example.txt
+
+User-agent: *
+Disallow: /search
+Disallow: /*?*sort=
+Disallow: /static/tmp/
+Allow: /static/
+
+User-agent: Googlebot
+Disallow: /search
+Disallow: /*?*sort=
+Disallow: /*?*utm_
+
+User-agent: GPTBot
+User-agent: CCBot
+Disallow: /
+
+Sitemap: https://www.example.com/sitemap.xml

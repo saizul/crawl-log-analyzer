@@ -26,6 +26,7 @@ from .parsers import (
     get_parser,
 )
 from .reader import ParseStats, expand_paths, iter_entries
+from .robots import RobotsTxt, load_robots_txt
 from .sitemap import load_url_list
 from .verify import (
     BotVerifier,
@@ -56,6 +57,7 @@ __all__ = [
     "LogFormatError",
     "ParseStats",
     "RegexLineParser",
+    "RobotsTxt",
     "VerificationStatus",
     "WasteRules",
     "__version__",
@@ -68,5 +70,6 @@ __all__ = [
     "iter_entries",
     "load_config",
     "load_ip_ranges",
+    "load_robots_txt",
     "load_url_list",
 ]

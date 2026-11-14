@@ -40,6 +40,7 @@ from .parsers import (
     get_parser,
 )
 from .reader import ParseStats, UnknownFormatError, expand_paths, iter_entries, iter_lines
+from .robots import RobotsError, load_robots_txt
 from .sections import Document, build_comparison_document, build_report_document
 from .sitemap import SitemapError, load_url_list
 from .verify import (
@@ -220,6 +221,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--sitemap",
         metavar="FILE",
         help="sitemap XML (or text file with one URL per line) for orphan detection",
+    )
+    extra.add_argument(
+        "--robots-txt",
+        metavar="FILE",
+        help="robots.txt file; report bot hits on URLs it disallows",
     )
     extra.add_argument(
         "--anomaly-threshold",
@@ -510,6 +516,14 @@ def _cmd_analyze(
             _warn(args, stderr, warning)
         overrides["sitemap_urls"] = urls
         overrides["sitemap_source"] = args.sitemap
+    if args.robots_txt:
+        try:
+            robots = load_robots_txt(args.robots_txt)
+        except (RobotsError, OSError) as exc:
+            raise CliError(f"cannot load robots.txt {args.robots_txt}: {exc}") from exc
+        for warning in robots.warnings:
+            _warn(args, stderr, f"robots.txt: {warning}")
+        overrides["robots"] = robots
 
     report, stats = _run_analysis(context, paths, _options(context, **overrides))
     _report_parse_problems(args, stats, stderr)

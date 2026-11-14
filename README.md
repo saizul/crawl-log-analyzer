@@ -15,6 +15,7 @@ answers the questions a technical SEO audit usually starts with:
 - How much of that crawl is wasted on redirects, errors, parameters and filters?
 - Which important URLs are never crawled, and which crawled URLs are not in the sitemap?
 - Is that "Googlebot" really Googlebot?
+- Which bots request URLs that robots.txt disallows for them?
 
 It is a command-line tool and a Python library with **no runtime dependencies**
 (standard library only), so it runs anywhere Python 3.10+ does, including on
@@ -43,6 +44,8 @@ the server that holds the logs.
   - response time percentiles per bot
   - crawl frequency per URL and the URLs crawled longest ago
   - orphan detection against a sitemap or URL list (both directions)
+  - robots.txt compliance: hits on disallowed URLs per bot, with the rule
+    that decided each one (RFC 9309 matching)
   - weekday by hour heatmap
   - crawl spikes and drops (robust z-score on daily hits)
 - **Outputs**: terminal tables, JSON, CSV (one file per table), Markdown and a
@@ -261,7 +264,8 @@ $ crawl-log-analyzer analyze access.log -o json | jq '.totals.bot_requests'
 Section keys for `--section`: `summary`, `bots`, `daily`, `status_classes`,
 `status_codes`, `top_urls`, `top_directories`, `waste`, `waste_urls`,
 `duplicates`, `response_times`, `crawl_frequency`, `stale_urls`,
-`sitemap_not_crawled`, `crawled_not_in_sitemap`, `heatmap`, `anomalies`,
+`sitemap_not_crawled`, `crawled_not_in_sitemap`, `robots_bots`,
+`robots_urls`, `robots_rules`, `heatmap`, `anomalies`,
 `fake_bots`, `fake_bot_ips`, `parsing`.
 
 ### Orphan detection
@@ -279,6 +283,54 @@ $ crawl-log-analyzer analyze access.log --sitemap sitemap.xml \
 Two lists come out: sitemap URLs no bot requested during the period, and
 URLs that bots fetched with a 2xx response, that no waste rule matches, and
 that the sitemap does not mention.
+
+### robots.txt compliance
+
+Give `--robots-txt` a saved copy of the site's robots.txt (it is read from
+disk, never fetched) to see which bot hits went to URLs the file disallows for
+the bot that made them:
+
+```console
+$ crawl-log-analyzer analyze examples/sample-access.log \
+    --robots-txt examples/robots.example.txt --section robots_bots --top 4
+```
+
+```text
+robots.txt compliance by bot
+============================
+157 bot hits (27.2%) went to 105 URLs that robots.txt disallows for the bot that requested them.
+'Group' is the user-agent group of the file that applies to the bot.
+
+Bot                   Group      Hits  Disallowed hits  Disallowed share  robots.txt fetches  Last robots.txt status
+--------------------  ---------  ----  ---------------  ----------------  ------------------  ----------------------
+Googlebot Smartphone  googlebot   274               59             21.5%                   0  -
+GPTBot                gptbot       34               34            100.0%                   0  -
+Googlebot Desktop     googlebot    92               20             21.7%                   0  -
+CCBot                 ccbot        11               11            100.0%                   0  -
+Showing 4 of 14 rows.
+```
+
+Three sections come out: `robots_bots` (disallowed hits per bot, which
+user-agent group applied, and how often the bot fetched `/robots.txt` with the
+last status it got), `robots_urls` (disallowed URLs that were crawled anyway,
+by whom and under which rule) and the detail section `robots_rules` (hits per
+`Disallow` line). The summary gains a "Disallowed by robots.txt" row.
+
+Matching follows RFC 9309, which is also what Google documents:
+
+- the most specific `User-agent` group wins and groups naming the same agent
+  are merged; `*` applies only when no other group matches. Logs carry the
+  full user agent, so a group token matches when it appears in it as a whole
+  word (`googlebot` matches `Googlebot/2.1` and `Googlebot-Image/1.0`);
+- within the group the longest matching `Allow`/`Disallow` path wins, and
+  `Allow` wins a tie; `*` and a trailing `$` work as wildcards;
+- paths are compared after percent-encoding normalisation, `/robots.txt` is
+  always allowed, and content after 500 KiB is ignored.
+
+Lines the parser does not understand are skipped with a warning (`-q` hides
+them). A verified search engine on a disallowed URL usually means the live
+robots.txt differs from your copy or the rule is newer than the log; an
+unverified bot on one is worth a closer look.
 
 ### Comparing two periods
 
@@ -432,6 +484,10 @@ generator, not the real Googlebot; do not use it on real logs.
   and fragment removed). It does not follow redirects or canonicals, and it
   knows nothing about internal links, so "orphan" here means "not in the URL
   list you supplied".
+- **robots.txt is checked as one file for every request.** Logs that mix
+  several hosts or protocols, each with its own robots.txt, should be split
+  first. Crawler-specific exceptions (for example Google's AdsBot ignoring the
+  `*` group) are not modelled.
 - **Static assets count as waste by default**, which is debatable for sites
   that rely on rendering. Turn it off with `flag_static_assets = false`.
 - **Waste detection is rule based.** The built-in parameter lists cover common
