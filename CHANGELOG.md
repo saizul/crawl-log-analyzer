@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `--robots-txt FILE` for `analyze`: checks every bot hit against a saved
+  robots.txt using RFC 9309 group selection and longest-match rules, and adds
+  the `robots_bots`, `robots_urls` and `robots_rules` sections (disallowed hits
+  per bot, crawled disallowed URLs with the deciding rule, hits per rule) plus
+  a summary row. `/robots.txt` fetches and their last status are counted per
+  bot. The parser is also available as `RobotsTxt` / `load_robots_txt`.
+- `examples/robots.example.txt` matching the sample site.
+
 ## [0.1.0] - 2026-11-11
 
 First public release.

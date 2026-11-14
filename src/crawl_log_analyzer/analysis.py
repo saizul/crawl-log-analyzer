@@ -21,6 +21,7 @@ from .bots import CATEGORY_LABELS, BotClassifier, BotMatch
 from .filters import EntryFilter
 from .models import LogEntry
 from .reader import ParseStats
+from .robots import RobotsTxt
 from .stats import QuantileSketch, detect_anomalies, fill_daily_series, median
 from .verify import BotVerifier, VerificationStatus
 from .waste import DUPLICATE, WasteRules, directory_of, find_duplicate_variants
@@ -67,6 +68,8 @@ class AnalysisOptions:
     #: Known URLs (normalised paths) for orphan detection.
     sitemap_urls: set[str] | None = None
     sitemap_source: str | None = None
+    #: Parsed robots.txt; bot hits on URLs it disallows are reported.
+    robots: RobotsTxt | None = None
     waste_rules: WasteRules = field(default_factory=WasteRules)
     filters: EntryFilter = field(default_factory=EntryFilter)
 
@@ -94,6 +97,18 @@ class _UrlStat:
         self.last = timestamp
         self.last_status = status
         self.days: set[int] = set()
+
+
+class _RobotsUrlStat:
+    """Per-URL aggregate of hits that robots.txt disallows."""
+
+    __slots__ = ("bots", "hits", "last", "rules")
+
+    def __init__(self, timestamp: datetime) -> None:
+        self.hits = 0
+        self.last = timestamp
+        self.bots: Counter[str] = Counter()
+        self.rules: Counter[str] = Counter()
 
 
 class _BotStat:
@@ -158,6 +173,11 @@ def _iso(timestamp: datetime | None) -> str | None:
     return timestamp.isoformat() if timestamp is not None else None
 
 
+def _ranked(counter: Counter[str]) -> list[str]:
+    """Keys of ``counter`` from most to least common (ties alphabetically)."""
+    return [key for key, _ in sorted(counter.items(), key=lambda kv: (-kv[1], kv[0]))]
+
+
 def _class_counts(statuses: Counter[int]) -> dict[str, int]:
     classes = dict.fromkeys(STATUS_CLASSES, 0)
     for status, hits in statuses.items():
@@ -211,6 +231,14 @@ class Analyzer:
 
         self._fake_hits: Counter[tuple[str, str]] = Counter()
         self._verification: Counter[str] = Counter()
+
+        self._robots_blocked = 0
+        self._robots_bot_blocked: Counter[str] = Counter()
+        self._robots_bot_group: dict[str, str] = {}
+        self._robots_fetches: Counter[str] = Counter()
+        self._robots_fetch_status: dict[str, tuple[datetime, int]] = {}
+        self._robots_rules: Counter[tuple[str, int, str]] = Counter()
+        self._robots_urls: dict[str, _RobotsUrlStat] = {}
 
     # ------------------------------------------------------------------
     # Accumulation
@@ -297,6 +325,9 @@ class Analyzer:
             bot.times.add(entry.request_time)
             self._times.add(entry.request_time)
 
+        if options.robots is not None:
+            self._check_robots(options.robots, entry, match.name)
+
         reasons = options.waste_rules.classify(url, status)
         if reasons:
             self._wasted_hits += 1
@@ -310,6 +341,30 @@ class Analyzer:
             examples[url] += 1
         else:
             self._clean_paths[entry.path] += 1
+
+    def _check_robots(self, robots: RobotsTxt, entry: LogEntry, bot: str) -> None:
+        if entry.path == "/robots.txt":
+            self._robots_fetches[bot] += 1
+            previous = self._robots_fetch_status.get(bot)
+            if previous is None or entry.timestamp >= previous[0]:
+                self._robots_fetch_status[bot] = (entry.timestamp, entry.status)
+        decision = robots.decide(entry.user_agent, entry.url)
+        if decision.group is not None:
+            self._robots_bot_group.setdefault(bot, decision.group.agent)
+        rule = decision.rule
+        if decision.allowed or rule is None or decision.group is None:
+            return
+        self._robots_blocked += 1
+        self._robots_bot_blocked[bot] += 1
+        self._robots_rules[(decision.group.agent, rule.line, rule.describe())] += 1
+        stat = self._robots_urls.get(entry.url)
+        if stat is None:
+            stat = self._robots_urls[entry.url] = _RobotsUrlStat(entry.timestamp)
+        stat.hits += 1
+        stat.bots[bot] += 1
+        stat.rules[rule.describe()] += 1
+        if entry.timestamp > stat.last:
+            stat.last = entry.timestamp
 
     # ------------------------------------------------------------------
     # Report building
@@ -360,6 +415,7 @@ class Analyzer:
             "response_times": self._response_times(bots),
             "crawl_frequency": self._frequency(period_days, reference),
             "orphans": self._orphans(),
+            "robots": self._robots_data(bots),
             "heatmap": self._heatmap_data(),
             "anomalies": self._anomalies(bots, first_day, last_day),
             "fake_bots": self._fake_data(),
@@ -384,6 +440,7 @@ class Analyzer:
             "verification_methods": self.verifier.methods() if self.verifier else [],
             "include_fake": options.include_fake,
             "sitemap": options.sitemap_source,
+            "robots_txt": options.robots.source if options.robots is not None else None,
         }
 
     def _bot_row(self, bot: _BotStat, bot_hits: int) -> dict[str, Any]:
@@ -622,6 +679,58 @@ class Analyzer:
             "not_in_sitemap": [
                 {"url": url, "hits": stat.hits, "last_crawled": _iso(stat.last)}
                 for url, stat in outside[:limit]
+            ],
+        }
+
+    def _robots_data(self, bots: list[_BotStat]) -> dict[str, Any] | None:
+        robots = self.options.robots
+        if robots is None:
+            return None
+        limit = self.options.max_rows
+        by_bot = []
+        for bot in bots:
+            blocked = self._robots_bot_blocked.get(bot.name, 0)
+            last_fetch = self._robots_fetch_status.get(bot.name)
+            by_bot.append(
+                {
+                    "bot": bot.name,
+                    "family": bot.family,
+                    "category": bot.category,
+                    "group": self._robots_bot_group.get(bot.name),
+                    "hits": bot.hits,
+                    "disallowed_hits": blocked,
+                    "disallowed_share": _share(blocked, bot.hits),
+                    "robots_txt_fetches": self._robots_fetches.get(bot.name, 0),
+                    "robots_txt_last_status": last_fetch[1] if last_fetch else None,
+                }
+            )
+        by_bot.sort(key=lambda row: (-row["disallowed_hits"], -row["hits"], row["bot"]))
+        urls = heapq.nsmallest(
+            limit, self._robots_urls.items(), key=lambda kv: (-kv[1].hits, kv[0])
+        )
+        rules = sorted(self._robots_rules.items(), key=lambda kv: (-kv[1], kv[0]))
+        return {
+            "source": robots.source,
+            "groups": len(robots.groups),
+            "rules": robots.rule_count,
+            "warnings": list(robots.warnings),
+            "disallowed_hits": self._robots_blocked,
+            "disallowed_share": _share(self._robots_blocked, self.bot_requests),
+            "disallowed_urls": len(self._robots_urls),
+            "by_bot": by_bot,
+            "urls": [
+                {
+                    "url": url,
+                    "hits": stat.hits,
+                    "bots": _ranked(stat.bots),
+                    "rules": _ranked(stat.rules),
+                    "last_crawled": _iso(stat.last),
+                }
+                for url, stat in urls
+            ],
+            "matched_rules": [
+                {"group": group, "line": line, "rule": text, "hits": hits}
+                for (group, line, text), hits in rules[:limit]
             ],
         }
 

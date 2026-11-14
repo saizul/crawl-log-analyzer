@@ -25,6 +25,9 @@ def filter_data(data: dict[str, Any], keys: list[str] | None) -> dict[str, Any]:
         "sitemap_not_crawled": "orphans",
         "crawled_not_in_sitemap": "orphans",
         "fake_bot_ips": "fake_bots",
+        "robots_bots": "robots",
+        "robots_urls": "robots",
+        "robots_rules": "robots",
         "new_urls": "urls",
         "lost_urls": "urls",
     }

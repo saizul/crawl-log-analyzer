@@ -212,6 +212,15 @@ def _summary_section(data: dict[str, Any]) -> Section:
                 f"({format_value(fake['fake_share'], PCT)} of checked hits)",
             ]
         )
+    robots = data.get("robots")
+    if robots is not None:
+        rows.append(
+            [
+                "Disallowed by robots.txt",
+                f"{format_value(robots['disallowed_hits'], INT)} hits "
+                f"({format_value(robots['disallowed_share'], PCT)})",
+            ]
+        )
     parsing = data.get("parsing")
     if parsing:
         rows.append(
@@ -550,6 +559,84 @@ def _orphan_sections(data: dict[str, Any]) -> list[Section]:
     ]
 
 
+def _robots_sections(data: dict[str, Any]) -> list[Section]:
+    robots = data.get("robots")
+    if robots is None:
+        return []
+    overview = (
+        f"{robots['disallowed_hits']:,} bot hits "
+        f"({format_value(robots['disallowed_share'], PCT)}) went to "
+        f"{robots['disallowed_urls']:,} URLs that robots.txt disallows for the bot "
+        f"that requested them."
+    )
+    return [
+        Section(
+            "robots_bots",
+            "robots.txt compliance by bot",
+            [
+                Column("Bot"),
+                Column("Group"),
+                Column("Hits", INT),
+                Column("Disallowed hits", INT),
+                Column("Disallowed share", PCT),
+                Column("robots.txt fetches", INT, "robots_txt_fetches"),
+                Column("Last robots.txt status", TEXT, "robots_txt_last_status"),
+            ],
+            [
+                [
+                    row["bot"],
+                    row["group"] or "(none)",
+                    row["hits"],
+                    row["disallowed_hits"],
+                    row["disallowed_share"],
+                    row["robots_txt_fetches"],
+                    row["robots_txt_last_status"],
+                ]
+                for row in robots["by_bot"]
+            ],
+            description=overview
+            + " 'Group' is the user-agent group of the file that applies to the bot.",
+            empty_note="No bot hits.",
+        ),
+        Section(
+            "robots_urls",
+            "Crawled despite robots.txt",
+            [
+                Column("URL"),
+                Column("Hits", INT),
+                Column("Bots"),
+                Column("Rules"),
+                Column("Last crawled", TIME),
+            ],
+            [
+                [
+                    row["url"],
+                    row["hits"],
+                    ", ".join(row["bots"]),
+                    "; ".join(row["rules"]),
+                    row["last_crawled"],
+                ]
+                for row in robots["urls"]
+            ],
+            description="Disallowed URLs that bots requested anyway, with the deciding rules.",
+            empty_note="No bot requested a disallowed URL.",
+            total_rows=robots["disallowed_urls"],
+        ),
+        Section(
+            "robots_rules",
+            "robots.txt rules hit",
+            [Column("Group"), Column("Line", INT), Column("Rule"), Column("Hits", INT)],
+            [
+                [row["group"], row["line"], row["rule"], row["hits"]]
+                for row in robots["matched_rules"]
+            ],
+            description="Disallow rules that decided at least one bot hit.",
+            detail=True,
+            empty_note="No disallow rule matched a bot hit.",
+        ),
+    ]
+
+
 def _heatmap_section(data: dict[str, Any]) -> Section:
     heatmap = data["heatmap"]
     columns = [Column("Weekday")]
@@ -654,6 +741,8 @@ def build_report_document(data: dict[str, Any], title: str = "Crawl log analysis
         subtitle.append("Bot verification: " + ", ".join(meta["verification_methods"]))
     if meta.get("sitemap"):
         subtitle.append(f"Sitemap: {meta['sitemap']}")
+    if meta.get("robots_txt"):
+        subtitle.append(f"robots.txt: {meta['robots_txt']}")
 
     sections: list[Section] = [_summary_section(data), _bots_section(data), _daily_section(data)]
     sections.extend(_status_sections(data))
@@ -662,6 +751,7 @@ def build_report_document(data: dict[str, Any], title: str = "Crawl log analysis
     sections.append(_response_section(data))
     sections.extend(_frequency_sections(data))
     sections.extend(_orphan_sections(data))
+    sections.extend(_robots_sections(data))
     sections.append(_heatmap_section(data))
     sections.append(_anomaly_section(data))
     sections.extend(_fake_sections(data))
