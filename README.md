@@ -54,6 +54,8 @@ the server that holds the logs.
 - **Filters**: date range, bot, bot category, status code, path prefix, path
   regex.
 - **Compare** two periods, for example before and after a migration.
+- **Thresholds** for cron and CI: `--fail-if 'waste_share > 20%'` exits with status 3 when
+  a metric crosses a limit.
 - **Sample log generator** so you can try everything without real data.
 
 ## Installation
@@ -352,6 +354,44 @@ $ python examples/generate_sample_logs.py --days 28 --hits-per-day 80 \
     --migration-day 14 --gzip -o migration.log.gz
 $ crawl-log-analyzer compare migration.log.gz --split-date 2026-03-16
 ```
+
+### Alerts and CI thresholds
+
+`--fail-if CONDITION` turns `analyze` into a check for cron jobs and CI pipelines. Each
+condition is `METRIC OPERATOR VALUE` (operators `>`, `>=`, `<`, `<=`, `==`, `!=`); shares
+accept a fraction or a percentage. The report is produced as usual, every condition is printed
+to standard error, and the exit status is `3` when any condition holds.
+
+```console
+$ crawl-log-analyzer analyze examples/sample-access.log -o none \
+    --robots-txt examples/robots.example.txt \
+    --fail-if 'waste_share > 20%' --fail-if 'status_5xx_share > 1%' \
+    --fail-if 'response_p95 > 0.5' --fail-if 'robots_disallowed_hits > 0'
+threshold FAIL: waste_share = 39.45% > 20%
+threshold ok: status_5xx_share = 0.87% > 1%
+threshold ok: response_p95 = 0.3072 > 0.5
+threshold FAIL: robots_disallowed_hits = 157 > 0
+$ echo $?
+3
+```
+
+Filters apply first, so `--bot googlebot --fail-if 'status_5xx >= 10'` checks Googlebot only.
+`--quiet` prints only the conditions that failed. `analyze --list-metrics` lists every metric:
+
+| Metric | Meaning |
+|---|---|
+| `bot_requests`, `bots_seen`, `unique_urls`, `hits_per_day` | crawl volume |
+| `bot_share` | share of all requests made by bots |
+| `wasted_hits`, `waste_share` | crawl budget waste |
+| `fake_bot_requests` | requests from bots that failed verification |
+| `status_3xx`, `status_4xx`, `status_5xx` | bot hits per status class |
+| `status_3xx_share`, `status_4xx_share`, `status_5xx_share` | the same as shares |
+| `response_p50`, `response_p90`, `response_p95`, `response_p99` | bot response time in seconds (needs request times in the log) |
+| `robots_disallowed_hits`, `robots_disallowed_share` | hits on URLs robots.txt disallows (needs `--robots-txt`) |
+| `anomalies`, `spikes`, `drops` | days flagged as crawl spikes or drops |
+| `malformed_share` | share of log lines that could not be parsed |
+
+An unknown metric, or one the input cannot provide, is a usage error (exit status `2`).
 
 ### Configuration file
 

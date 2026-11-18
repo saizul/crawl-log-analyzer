@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `--fail-if CONDITION` for `analyze` (repeatable): checks `METRIC OP VALUE` conditions such
+  as `waste_share > 20%`, `status_5xx >= 10` or `response_p95 > 0.5` against the report and
+  exits with status 3 when any of them holds, for cron alerts and CI. 24 metrics cover crawl
+  volume, waste, status classes, response time percentiles, robots.txt violations, anomalies
+  and parse errors; `analyze --list-metrics` lists them. The parser and evaluator are exported
+  as `parse_condition` and `evaluate_conditions`.
+- Contributor community files: `CODE_OF_CONDUCT.md`, issue templates and a pull request
+  template.
 - `--robots-txt FILE` for `analyze`: checks every bot hit against a saved
   robots.txt using RFC 9309 group selection and longest-match rules, and adds
   the `robots_bots`, `robots_urls` and `robots_rules` sections (disallowed hits

@@ -15,6 +15,7 @@ from .bots import BotClassifier, BotMatch, BotSignature
 from .compare import Comparison, compare_reports
 from .config import Config, ConfigError, load_config
 from .filters import EntryFilter
+from .gates import Condition, GateResult, evaluate_conditions, parse_condition
 from .models import LogEntry
 from .parsers import (
     JsonLineParser,
@@ -45,11 +46,13 @@ __all__ = [
     "BotSignature",
     "BotVerifier",
     "Comparison",
+    "Condition",
     "Config",
     "ConfigError",
     "CrawlReport",
     "DnsVerifier",
     "EntryFilter",
+    "GateResult",
     "IpRangeSet",
     "JsonLineParser",
     "LineParser",
@@ -65,6 +68,7 @@ __all__ = [
     "compare_reports",
     "compile_log_format",
     "detect_format",
+    "evaluate_conditions",
     "expand_paths",
     "get_parser",
     "iter_entries",
@@ -72,4 +76,5 @@ __all__ = [
     "load_ip_ranges",
     "load_robots_txt",
     "load_url_list",
+    "parse_condition",
 ]

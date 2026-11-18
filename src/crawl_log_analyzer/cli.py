@@ -8,7 +8,7 @@ Subcommands::
     crawl-log-analyzer detect-format access.log       # show the detected format
 
 Exit codes: ``0`` success, ``1`` no log line could be parsed, ``2`` usage,
-configuration or input errors.
+configuration or input errors, ``3`` a ``--fail-if`` condition holds.
 """
 
 from __future__ import annotations
@@ -28,6 +28,7 @@ from .bots import CATEGORIES, CATEGORY_LABELS, BotClassifier
 from .compare import compare_reports
 from .config import Config, ConfigError, load_config
 from .filters import EntryFilter, FilterError, parse_date
+from .gates import EXIT_THRESHOLD, METRICS, ConditionError, evaluate_conditions, parse_condition
 from .output import UnknownSectionError, csv_out, json_out, markdown, table
 from .output import html as html_out
 from .parsers import (
@@ -214,7 +215,10 @@ def build_parser() -> argparse.ArgumentParser:
         description="Analyse one or more access logs (plain or compressed, files, "
         "directories or globs; '-' reads standard input).",
     )
-    analyze.add_argument("logs", nargs="+", metavar="LOG", help="log file, directory or glob")
+    analyze.add_argument("logs", nargs="*", metavar="LOG", help="log file, directory or glob")
+    analyze.add_argument(
+        "--list-metrics", action="store_true", help="list the metrics --fail-if understands"
+    )
     _add_input_options(analyze)
     extra = analyze.add_argument_group("analyze options")
     extra.add_argument(
@@ -232,6 +236,14 @@ def build_parser() -> argparse.ArgumentParser:
         type=_positive_float,
         metavar="Z",
         help="robust z-score that flags a day as a spike or drop (default 3.5)",
+    )
+    extra.add_argument(
+        "--fail-if",
+        action="append",
+        default=[],
+        metavar="CONDITION",
+        help="exit with status 3 when CONDITION holds, e.g. 'waste_share > 20%%' or "
+        "'status_5xx >= 10' (repeatable; see --list-metrics)",
     )
     extra.add_argument(
         "--now",
@@ -498,6 +510,18 @@ def _run_analysis(
 def _cmd_analyze(
     args: argparse.Namespace, stdout: TextIO, stderr: TextIO, resolver: Resolver | None
 ) -> int:
+    if args.list_metrics:
+        width = max(len(name) for name in METRICS)
+        for name, (description, share, _extract) in METRICS.items():
+            unit = " (share: use 0.2 or 20%)" if share else ""
+            stdout.write(f"{name:<{width}}  {description}{unit}\n")
+        return EXIT_OK
+    if not args.logs:
+        raise CliError("give at least one LOG (file, directory, glob or '-')")
+    try:
+        conditions = [parse_condition(text) for text in args.fail_if]
+    except ConditionError as exc:
+        raise CliError(str(exc)) from exc
     context = _build_context(args, resolver)
     paths = _expand(args.logs)
 
@@ -530,9 +554,18 @@ def _cmd_analyze(
     if stats.parsed == 0:
         print("error: no log lines could be parsed", file=stderr)
         return EXIT_NO_DATA
+    try:
+        gates = evaluate_conditions(conditions, report.data)
+    except ConditionError as exc:
+        raise CliError(str(exc)) from exc
     document = build_report_document(report.data, title=args.title or "Crawl log analysis")
     _emit(args, document, stdout, stderr)
-    return EXIT_OK
+    failed = [gate for gate in gates if gate.failed]
+    for gate in gates:
+        status = "FAIL" if gate.failed else "ok"
+        if gate.failed or not args.quiet:
+            print(f"threshold {status}: {gate.describe()}", file=stderr)
+    return EXIT_THRESHOLD if failed else EXIT_OK
 
 
 def _cmd_compare(
